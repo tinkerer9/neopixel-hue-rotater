@@ -1,15 +1,15 @@
 /*
    NeoPixel Hue Rotater
-   by Max Parisi
+   by Max Parisi (@tinkerer9)
 
-   Credit to Adrianotiger for the NeoPixel code (generated from https://adrianotiger.github.io/Neopixel-Effect-Generator/)
+   Credit to Adrianotiger for the NeoPixel code (generated from https://adrianotiger.github.io/Neopixel-Effect-Generator/) and everyone on Arduino Fourm for helping with problems along the way.
 
-   Rotates a hue around a 50-led NeoPixel strip connected to pin 8. Use button connected to pin 2 for 'on/off,' pot connected pin A0 for brightness, pot connected to A1 for LED brightnes on pin 6/hue (on mode 2). Wiring on https://wokwi.com/projects/338095330209825363.
+   GitHub repository on https://github.com/tinkerer9/NeoPixel_Hue_Rotater.
 */
 
 // INCLUDE LIBRARIES
-#include <Adafruit_NeoPixel.h>
-#include <dht.h>
+#include <Adafruit_NeoPixel.h> // for NeoPixels
+#include <dht.h> // for DHT
 
 // FOR NEOPIXEL RAINBOW
 class Strip
@@ -48,24 +48,25 @@ struct Loop
 };
 
 // DEFINE VARIABLES
-const int neoLeds = 50;
-const int neoPin = 8;
-const int neo2Leds = 5;
-const int neo2Pin = 7;
-const int btnPin = 2;
-const int brightnessPin = 0;
-const int pot2Pin = 1;
-const int ledPin = 5;
-const int buzzPin = 3;
-const int dhtPin = 4;
-const int sLedPin = LED_BUILTIN;
+const int neoLeds = 50; // LEDs on Neopixel strip 1
+const int neoPin = 8; // pin of Neopixel strip 1
+const int neo2Leds = 5; // LEDs on Neopixel strip 2 (generally number of modes)
+const int neo2Pin = 7; // pin of Neopixel strip 2
+const int btnPin = 2; // pin of button
+const int brightnessPin = 0; // pin of brightness pot
+const int pot2Pin = 1; // pin of LED brightness/hue pot
+const int ledPin = 5; // pin of LED MOSFET
+const int buzzPin = 3; // pin of buzzer
+const int dhtPin = 4; // pin of DHT
+const int sLedPin = LED_BUILTIN; // pin of switch LED transistor (LED_BUILTIN is pin # of built in LED)
+const int hueSpeed = 2.8; // speed of mode 3
 
 int brightnessState, pot2State, brightness, neoSpeed, pixelNum, chk, prePixelNum, hue, i, inputI;
 int mode = 1;
 byte rgb[3];
 float temp, rh, preTemp, preRh, inputF;
 unsigned long millisOffset;
-boolean btnState; // used to be int; not tested
+boolean btnState;
 
 // SET UP COMPONENTS
 Strip NeoPixel(neoLeds, neoPin, neoLeds, NEO_GRB + NEO_KHZ800);
@@ -77,25 +78,26 @@ dht DHT;
 void setup() {
   // SET PINMODES
   pinMode(btnPin, INPUT_PULLUP);
-  pinMode(brightnessPin, INPUT);
-  pinMode(pot2Pin, INPUT);
   pinMode(ledPin, OUTPUT);
   pinMode(sLedPin, OUTPUT);
 
-  digitalWrite(sLedPin, HIGH);
+  digitalWrite(sLedPin, HIGH); // turn on switch LED
 
-  Serial.begin(9600);
+  Serial.begin(9600); // begin Serial port at 9600 baud rate
   Serial.println("Power On");
 
+  buzz(500);
+
+  // BEGIN NEOPIXEL STRIPS
   NeoPixel.strip.begin();
   NeoPixel2.strip.begin();
+
+  // TURN OFF NEOPIXEL STRIPS AND LED
   strip_off();
   strip2_off();
-
   led(0);
-  strip_off();
-  strip2_off();
 
+  // RUN TEST IF BUTTON HELD DOWN DURING STARTUP
   btnState = !digitalRead(btnPin);
   if (btnState) {
     delay(200);
@@ -104,36 +106,38 @@ void setup() {
     delay(1000);
   }
 
-  pixel2_up_to(1, 0, 0, 255);
+  pixel2_up_to(1, 0, 0, 255); // set NeoPixel strip 2 to correct mode #
 
-  digitalWrite(sLedPin, LOW);
+  digitalWrite(sLedPin, LOW); // turn off switch LED
 }
 
 // LOOP CODE
 void loop() {
-  // SET STATE VARIABLES
+  // SET DHT VARIABLES
   chk = DHT.read11(dhtPin);
   temp = DHT.temperature;
-  rh = DHT.humidity;
+  rh = DHT.humidity; // rh = humidity
 
+  // SET BTN/POT VARIABLES
   brightnessState = pot_to_value(analogRead(brightnessPin));
-  brightness = value_to_brightness(brightnessState);
   pot2State = pot_to_value(analogRead(pot2Pin));
-
   btnState = !digitalRead(btnPin);
 
   // CODE TO SWITCH MODE
-  if (btnState) {
-    while (btnState) {
-      btnState = digitalRead(btnPin);
+  if (btnState) { // if button pressed
+    while (btnState) { // wait until released
+      btnState = !digitalRead(btnPin);
     }
-    mode++;
-    while (mode > 5) {
-      mode -= 5;
+    mode++; // increment mode
+    while (mode > 5) { // if mode is greater than 6
+      mode -= 5; // subtract 5
     }
+
+    // UPDATE STRIP 2
     strip2_off();
     pixel2_up_to(mode, 0, 0, 255);
 
+    // UPDATES FOR CERTAIN MODES
     if (mode == 3) {
       hue = 0;
     }
@@ -141,56 +145,58 @@ void loop() {
       preTemp = temp + 1;
       preRh = rh + 1;
     }
-    buzz(500);
-    delay(500);
+
+    buzz(500); // buzz
   }
 
   // MODE SWITCH
   switch (mode) {
     case 1: // MODE 1
-      all(255, 255, 255);
-      led(value_to_led(pot2State));
+      all(255, 255, 255); // NeoPixel strip 1 all white
+      led(value_to_led(pot2State)); // LED at value of LED/hue pot
       break;
     case 2: // MODE 2
-      led(0);
-      hue_to_rgb(value_to_hue(pot2State), rgb);
-      all(rgb[0], rgb[1], rgb[2]);
+      led(0); // LED off
+      hue_to_rgb(value_to_hue(pot2State), rgb); // convert LED/hue to hue value to rgb value
+      all(rgb[0], rgb[1], rgb[2]); // Set strip 1 all at rgb value
       break;
     case 3: // MODE 3
-      if (hue > 359) {
+      while (hue > 359) { // make sure hue ranges from 0-359, not going above 360
         hue -= 360;
       }
 
-      led(value_to_led(pot2State));
-      hue_to_rgb(hue, rgb);
-      all(rgb[0], rgb[1], rgb[2]);
+      led(value_to_led(pot2State)); // LED at value of LED/hue pot
+      hue_to_rgb(hue, rgb); // convert hue value to rgb value
+      all(rgb[0], rgb[1], rgb[2]); // Set strip 1 all at rgb value
 
-      hue += 2.8;
+      hue += hueSpeed; // increment hue by hueSpeed
       break;
     case 4: // MODE 4
-      strips_loop();
-      led(value_to_led(pot2State));
+      strips_loop(); // run rainbow code
+      led(value_to_led(pot2State)); // LED at value of LED/hue pot
       break;
     case 5: // MODE 5
-      led(value_to_led(pot2State));
-      if (!(temp == preTemp) || !(rh == preRh)) {
-        all(5, 5, 0);
-        pixel(temp_to_pixel(temp), 255, 0, 0);
-        pixel(rh_to_pixel(rh), 0, 0, 255);
+      led(value_to_led(pot2State)); // LED at value of LED/hue pot
+      if (!(temp == preTemp) || !(rh == preRh)) { // if temp or humidity changed
+        all(5, 5, 0); // turn strip 1 all at dim yellow (background)
+        pixel(temp_to_pixel(temp), 255, 0, 0); // set corresponding light red for temp
+        pixel(rh_to_pixel(rh), 0, 0, 255); // set corresponding light blue for humidity
 
+        // UPDATE PRETEMP AND PRERH
         preTemp = temp;
         preRh = rh;
       }
       break;
     default:
-      error("The variable 'mode' went over maximum value.");
+      error("The variable 'mode' went over maximum value."); // if mode > 5 than show error message
       break;
   }
 
   // SET NEOPIXEL BRIGHTNESS AND UPDATE NEOPIXELS
+  brightness = value_to_brightness(brightnessState);
   NeoPixel.strip.setBrightness(brightness);
   NeoPixel.strip.show();
-  if (brightness <= 0) {
+  if (brightness <= 0) { // make sure strip 1 is always on
     NeoPixel2.strip.setBrightness(1);
   } else {
     NeoPixel2.strip.setBrightness(brightness);
@@ -255,7 +261,7 @@ uint8_t strip0_loop0_eff0() {
 
 // MAP VALUE TO BRIGHTNESS
 int value_to_brightness(int value) {
-  if (value >= 1000) {
+  if (value >= 1000) { // make full and 0 brightness "sticky"
     return 255;
   } else if (value <= 24) {
     return 0;
@@ -274,13 +280,14 @@ int value_to_brightness(int value) {
 }
 
 // MAP POT VALUE TO ARTIFICIAL VALUE
+// my pot value ranges from 200 to 800, not 0 to 1024
+// change to your pot values
 int pot_to_value(int pot) {
-  int value = map(pot, 200, 800, 0, 1024);
+  int value = map(pot, 200, 800, 0, 1024); // change 200 and 800 to your pot max. and min. values
 
-  if (value < 0) {
+  if (value < 0) { // make sure value is in range
     value = 0;
-  }
-  if (value > 1024) {
+  } else if (value > 1024) {
     value = 1024;
   }
 
@@ -349,10 +356,9 @@ int hue_to_rgb(float H, byte rgb[]) {
 int temp_to_pixel(int temp) {
   int pixel = map(temp, 15, 40, 0, (neoLeds - 1));
 
-  if (pixel < 0) {
+  if (pixel < 0) { // make sure value is in range
     pixel = 0;
-  }
-  if (pixel > (neoLeds - 1)) {
+  } else if (pixel > (neoLeds - 1)) {
     pixel = neoLeds - 1;
   }
 
@@ -363,10 +369,9 @@ int temp_to_pixel(int temp) {
 int rh_to_pixel(int rh) {
   int pixel = map(rh, 30, 90, 0, (neoLeds - 1));
 
-  if (pixel < 0) {
+  if (pixel < 0) { // make sure value is in range
     pixel = 0;
-  }
-  if (pixel > (neoLeds - 1)) {
+  } else if (pixel > (neoLeds - 1)) {
     pixel = neoLeds - 1;
   }
 
@@ -375,10 +380,9 @@ int rh_to_pixel(int rh) {
 
 // SET PIXEL CODE FOR STRIP 1
 int pixel(int pixel, int r, int g, int b) {
-  if (pixel < 0) {
+  if (pixel < 0) { // detect error
     error("On function 'pixel()' first parameter (the pixel #) was above 0.");
-  }
-  if (pixel > (neoLeds - 1)) {
+  } else if (pixel > (neoLeds - 1)) {
     error("On function 'pixel()' first parameter (the pixel #) was above LEDs on the NeoPixel Strip (minus 1 because of zero indexing).");
   }
 
@@ -388,10 +392,9 @@ int pixel(int pixel, int r, int g, int b) {
 
 // SET PIXEL CODE FOR STRIP 2
 int pixel2(int pixel, int r, int g, int b) {
-  if (pixel < 0) {
+  if (pixel < 0) { // detect error
     error("On function 'pixel2()' first parameter (the pixel #) was above 0.");
-  }
-  if (pixel > (neo2Leds - 1)) {
+  } else if (pixel > (neo2Leds - 1)) {
     error("On function 'pixel2()' first parameter (the pixel #) was above LEDs on the NeoPixel Strip #2 (minus 1 because of zero indexing).");
   }
 
@@ -401,6 +404,12 @@ int pixel2(int pixel, int r, int g, int b) {
 
 // SET PIXEL UP TO CODE FOR STRIP 1
 int pixel_up_to(int pixels, int r, int g, int b) {
+  if (pixel < 0) { // detect error
+    error("On function 'pixel_up_to()' first parameter (the pixel #) was above 0.");
+  } else if (pixel > (neoLeds - 1)) {
+    error("On function 'pixel_up_to()' first parameter (the pixel #) was above LEDs on the NeoPixel Strip #2 (minus 1 because of zero indexing).");
+  }
+
   for (i = 0; i < pixels; i++) {
     NeoPixel.strip.setPixelColor(i, NeoPixel.strip.Color(r, g, b));
   }
@@ -425,23 +434,35 @@ int buzz(int duration) {
 
 // ERROR CODE
 int error(String info) {
+  // SET STRIP AT MAX. BRIGHTNESS
   NeoPixel.strip.setBrightness(255);
   NeoPixel2.strip.setBrightness(255);
-  led(0);
+
+  led(0); // turn LED off
+
+  // PRINT ERROR MESSAGE
   Serial.print("ERROR: ");
   Serial.println(info);
-  while (!(digitalRead(btnPin))) {
-    buzz(1000);
+
+  while (!btnState) { // run until button pressed
+    btnState = !digitalRead(btnPin); // update btnState
+    buzz(1000); // buzz for 1 second
+
+    // ALL STRIPS RED
     all(255, 0, 0);
     all2(255, 0, 0);
-    digitalWrite(sLedPin, HIGH);
-    delay(1000);
+
+    digitalWrite(sLedPin, HIGH); // switch LED on
+    delay(1000); // wait 1 second
+
+    // ALL STRIPS OFF
     strip_off();
     strip2_off();
-    digitalWrite(sLedPin, LOW);
-    delay(1000);
+
+    digitalWrite(sLedPin, LOW); // switch LED off
+    delay(1000); // wait 1 second
   }
-  Serial.println("Error Ignored");
+  Serial.println("Error Ignored"); // when button pressed, continue
 }
 
 // STRIP 1 OFF CODE
@@ -480,49 +501,57 @@ int led(int dutyCycle) {
 // STRIP TEST CODE
 void test() {
   Serial.println("~~~ Light Test ~~~");
+
+  // SET BOTH STRIPS TO FULL BRIGHTNESS
   NeoPixel.strip.setBrightness(255);
   NeoPixel2.strip.setBrightness(255);
-  buzz(500);
+
+  buzz(500); // buzz
+
   Serial.println("  Red");
-  for (i = 0; i < neoLeds; i++) {
+  for (i = 0; i < neoLeds; i++) { // "swipe" up red
     pixel(i, 255, 0, 0);
     delay(500 / neoLeds);
   }
   delay(250);
-  buzz(500);
+  buzz(500); // buzz
+
   Serial.println("  Green");
-  for (i = 0; i < neoLeds; i++) {
+  for (i = 0; i < neoLeds; i++) { // "swipe" up green
     pixel(i, 0, 255, 0);
     delay(500 / neoLeds);
   }
   delay(250);
-  buzz(500);
+  buzz(500); // buzz
   Serial.println("  Blue");
-  for (i = 0; i < neoLeds; i++) {
+  for (i = 0; i < neoLeds; i++) { // "swipe" up blue
     pixel(i, 0, 0, 255);
     delay(500 / neoLeds);
   }
   delay(250);
   buzz(500);
   Serial.println("  Yellow");
-  for (i = 0; i < neoLeds; i++) {
+  for (i = 0; i < neoLeds; i++) { // "swipe" up yellow
     pixel(i, 255, 255, 0);
     delay(500 / neoLeds);
   }
   delay(250);
-  buzz(500);
+  buzz(500); // buzz
   Serial.println("  White w/ LED");
-  for (i = 0; (i < neoLeds); i++) {
+  for (i = 0; (i < neoLeds); i++) { // "swipe" up white and change brightness of LED accordingly
     pixel(i, 255, 255, 255);
     led(map(i, 0, neoLeds, 0, 100));
     delay(500 / neoLeds);
   }
-  led(100);
+  led(100); // make LED fully on
   delay(1000);
+
+  // SET BOTH STRIPS OFF AND TURN LED OFF
   strip_off();
   strip2_off();
   led(0);
-  buzz(500);
+
+  buzz(500); // buzz
   delay(1000);
   Serial.println("Done with test");
 }
